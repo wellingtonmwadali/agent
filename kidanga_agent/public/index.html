@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kidanga Lead Generation Agent</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-shadow {
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #10b981; }
+        .status-offline { background-color: #ef4444; }
+        .status-warning { background-color: #f59e0b; }
+        
+        .metric-card {
+            transition: transform 0.2s;
+        }
+        .metric-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .log-container {
+            max-height: 300px;
+            overflow-y: auto;
+            background: #1f2937;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .log-entry {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            color: #e5e7eb;
+            margin-bottom: 4px;
+        }
+        
+        .log-success { color: #10b981; }
+        .log-error { color: #ef4444; }
+        .log-warning { color: #f59e0b; }
+        .log-info { color: #3b82f6; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app" class="min-h-screen">
+        <!-- Header -->
+        <header class="gradient-bg text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold">
+                            <i class="fas fa-rocket mr-3"></i>
+                            Kidanga Lead Generation Agent
+                        </h1>
+                        <p class="text-blue-100 mt-2">Automated lead generation for Kenyan businesses</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="text-right">
+                            <div class="text-sm text-blue-100">Status</div>
+                            <div class="flex items-center">
+                                <span :class="['status-indicator', systemStatus.agent?.running ? 'status-online' : 'status-offline']"></span>
+                                <span class="font-semibold">{{ systemStatus.agent?.running ? 'Running' : 'Idle' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="container mx-auto px-4 py-8">
+            <!-- Alert Messages -->
+            <div v-if="alertMessage" :class="['alert', 'mb-6', 'p-4', 'rounded-lg', 'flex', 'items-center', alertMessage.type === 'success' ? 'bg-green-100 text-green-800' : alertMessage.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800']">
+                <i :class="['fas', 'mr-3', alertMessage.type === 'success' ? 'fa-check-circle' : alertMessage.type === 'error' ? 'fa-exclamation-triangle' : 'fa-info-circle']"></i>
+                {{ alertMessage.text }}
+                <button @click="alertMessage = null" class="ml-auto text-xl">&times;</button>
+            </div>
+
+            <!-- System Status Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="card-shadow bg-white rounded-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                            <i class="fas fa-cogs text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-semibold text-gray-800">System</h3>
+                            <div class="flex items-center">
+                                <span :class="['status-indicator', systemStatus.server?.running ? 'status-online' : 'status-offline']"></span>
+                                <span class="text-sm text-gray-600">{{ systemStatus.server?.running ? 'Online' : 'Offline' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-shadow bg-white rounded-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-green-100 text-green-600">
+                            <i class="fab fa-whatsapp text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-semibold text-gray-800">WhatsApp</h3>
+                            <div class="flex items-center">
+                                <span :class="['status-indicator', systemStatus.services?.whatsapp?.isReady ? 'status-online' : 'status-offline']"></span>
+                                <span class="text-sm text-gray-600">{{ systemStatus.services?.whatsapp?.isReady ? 'Ready' : 'Not Ready' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-shadow bg-white rounded-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-purple-100 text-purple-600">
+                            <i class="fas fa-envelope text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-semibold text-gray-800">Email</h3>
+                            <div class="flex items-center">
+                                <span :class="['status-indicator', (systemStatus.services?.email?.sendgrid || systemStatus.services?.email?.nodemailer) ? 'status-online' : 'status-offline']"></span>
+                                <span class="text-sm text-gray-600">{{ (systemStatus.services?.email?.sendgrid || systemStatus.services?.email?.nodemailer) ? 'Ready' : 'Not Ready' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-shadow bg-white rounded-lg p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-yellow-100 text-yellow-600">
+                            <i class="fas fa-brain text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-semibold text-gray-800">OpenAI</h3>
+                            <div class="flex items-center">
+                                <span :class="['status-indicator', systemStatus.services?.openai?.connected ? 'status-online' : 'status-offline']"></span>
+                                <span class="text-sm text-gray-600">{{ systemStatus.services?.openai?.connected ? 'Connected' : 'Disconnected' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Dashboard -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Control Panel -->
+                <div class="lg:col-span-1">
+                    <div class="card-shadow bg-white rounded-lg p-6 mb-6">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4">
+                            <i class="fas fa-play-circle mr-2"></i>
+                            Control Panel
+                        </h2>
+                        
+                        <!-- Agent Controls -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Search Limit</label>
+                                <input v-model.number="agentOptions.limit" type="number" min="1" max="1000" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                       placeholder="e.g., 10">
+                                <p class="text-xs text-gray-500 mt-1">Number of search queries to execute</p>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Mode</label>
+                                <select v-model="agentOptions.mode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="full">Full Run</option>
+                                    <option value="test">Test Mode</option>
+                                    <option value="targeted">Targeted Search</option>
+                                </select>
+                            </div>
+
+                            <div v-if="agentOptions.mode === 'targeted'" class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Business Types 
+                                        <span class="text-xs text-gray-500">({{ agentOptions.selectedBusinesses.length }} selected)</span>
+                                    </label>
+                                    <select v-model="agentOptions.selectedBusinesses" multiple class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-32">
+                                        <option v-for="business in keywords.businessTypes" :key="business" :value="business">
+                                            {{ business }}
+                                        </option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Locations 
+                                        <span class="text-xs text-gray-500">({{ agentOptions.selectedLocations.length }} selected)</span>
+                                    </label>
+                                    <select v-model="agentOptions.selectedLocations" multiple class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-32">
+                                        <option v-for="location in keywords.locations" :key="location" :value="location">
+                                            {{ location }}
+                                        </option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+                                </div>
+                                <div v-if="totalSelectedCombinations > 0" class="bg-blue-50 p-3 rounded-lg">
+                                    <div class="text-sm text-blue-800">
+                                        <i class="fas fa-info-circle mr-2"></i>
+                                        Will generate {{ totalSelectedCombinations }} search combinations
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex space-x-3">
+                                <button @click="startAgent" :disabled="systemStatus.agent?.running" 
+                                        class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+                                    <i class="fas fa-play mr-2"></i>
+                                    {{ systemStatus.agent?.running ? 'Running...' : 'Start Agent' }}
+                                </button>
+                                <button @click="stopAgent" :disabled="!systemStatus.agent?.running" 
+                                        class="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+                                    <i class="fas fa-stop mr-2"></i>
+                                    Stop
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="card-shadow bg-white rounded-lg p-6">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4">
+                            <i class="fas fa-bolt mr-2"></i>
+                            Quick Actions
+                        </h2>
+                        <div class="space-y-3">
+                            <button @click="refreshStatus" class="w-full bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                                <i class="fas fa-refresh mr-2"></i>
+                                Refresh Status
+                            </button>
+                            <button @click="showWhatsAppTest = true" class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors">
+                                <i class="fab fa-whatsapp mr-2"></i>
+                                Test WhatsApp
+                            </button>
+                            <button @click="showEmailTest = true" class="w-full bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors">
+                                <i class="fas fa-envelope mr-2"></i>
+                                Test Email
+                            </button>
+                            <button @click="downloadLeads" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors">
+                                <i class="fas fa-download mr-2"></i>
+                                Download Leads
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats and Monitoring -->
+                <div class="lg:col-span-2">
+                    <!-- Performance Metrics -->
+                    <div class="card-shadow bg-white rounded-lg p-6 mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl font-bold text-gray-800">
+                                <i class="fas fa-chart-bar mr-2"></i>
+                                Performance Metrics
+                            </h2>
+                            <div v-if="systemStatus.agent?.running" class="flex items-center text-sm text-blue-600">
+                                <div class="spinner mr-2"></div>
+                                Processing...
+                            </div>
+                        </div>
+                        
+                        <!-- Progress Bar -->
+                        <div v-if="systemStatus.agent?.running && agentProgress.total > 0" class="mb-4">
+                            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                                <span>Progress: {{ agentProgress.current }} / {{ agentProgress.total }}</span>
+                                <span>{{ Math.round((agentProgress.current / agentProgress.total) * 100) }}%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill" :style="{ width: (agentProgress.current / agentProgress.total) * 100 + '%' }"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="metric-card bg-blue-50 p-4 rounded-lg text-center" :class="{ 'pulse': systemStatus.agent?.running }">
+                                <div class="text-2xl font-bold text-blue-600">{{ currentStats.totalBusinessesFound || 0 }}</div>
+                                <div class="text-sm text-gray-600">Businesses Found</div>
+                            </div>
+                            <div class="metric-card bg-green-50 p-4 rounded-lg text-center" :class="{ 'pulse': systemStatus.agent?.running }">
+                                <div class="text-2xl font-bold text-green-600">{{ currentStats.businessesWithoutWebsites || 0 }}</div>
+                                <div class="text-sm text-gray-600">Without Websites</div>
+                            </div>
+                            <div class="metric-card bg-purple-50 p-4 rounded-lg text-center" :class="{ 'pulse': systemStatus.agent?.running }">
+                                <div class="text-2xl font-bold text-purple-600">{{ currentStats.whatsappMessages || 0 }}</div>
+                                <div class="text-sm text-gray-600">WhatsApp Sent</div>
+                            </div>
+                            <div class="metric-card bg-yellow-50 p-4 rounded-lg text-center" :class="{ 'pulse': systemStatus.agent?.running }">
+                                <div class="text-2xl font-bold text-yellow-600">{{ currentStats.emailsSent || 0 }}</div>
+                                <div class="text-sm text-gray-600">Emails Sent</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Additional Stats Row -->
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                            <div class="metric-card bg-gray-50 p-3 rounded-lg text-center">
+                                <div class="text-lg font-bold text-gray-600">{{ currentStats.skipped || 0 }}</div>
+                                <div class="text-xs text-gray-500">Skipped</div>
+                            </div>
+                            <div class="metric-card bg-red-50 p-3 rounded-lg text-center">
+                                <div class="text-lg font-bold text-red-600">{{ currentStats.errors || 0 }}</div>
+                                <div class="text-xs text-gray-500">Errors</div>
+                            </div>
+                            <div class="metric-card bg-indigo-50 p-3 rounded-lg text-center">
+                                <div class="text-lg font-bold text-indigo-600">{{ runningTime }}</div>
+                                <div class="text-xs text-gray-500">Runtime</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Activity Log -->
+                    <div class="card-shadow bg-white rounded-lg p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl font-bold text-gray-800">
+                                <i class="fas fa-list mr-2"></i>
+                                Activity Log
+                            </h2>
+                            <div class="flex items-center space-x-2">
+                                <select v-model="logFilter" class="text-sm px-2 py-1 border border-gray-300 rounded">
+                                    <option value="all">All</option>
+                                    <option value="success">Success</option>
+                                    <option value="error">Errors</option>
+                                    <option value="warning">Warnings</option>
+                                    <option value="info">Info</option>
+                                </select>
+                                <button @click="clearLogs" class="text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600">
+                                    Clear
+                                </button>
+                                <button @click="autoScroll = !autoScroll" class="text-xs px-2 py-1 rounded" :class="autoScroll ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'">
+                                    Auto-scroll
+                                </button>
+                            </div>
+                        </div>
+                        <div ref="logContainer" class="log-container">
+                            <div v-if="filteredLogs.length === 0" class="text-gray-400 text-center py-8">
+                                {{ activityLog.length === 0 ? 'No activity yet. Start the agent to see real-time logs.' : 'No logs match the current filter.' }}
+                            </div>
+                            <div v-for="(log, index) in filteredLogs.slice(-100)" :key="index" 
+                                 :class="['log-entry', getLogClass(log.type)]">
+                                <span class="text-gray-400">[{{ formatTime(log.timestamp) }}]</span>
+                                <span :class="['px-1', 'rounded', 'text-xs', 'mr-2', getLogBadgeClass(log.type)]">
+                                    {{ log.type.toUpperCase() }}
+                                </span>
+                                {{ log.message }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- WhatsApp Test Modal -->
+        <div v-if="showWhatsAppTest" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+                <h3 class="text-lg font-bold mb-4">Test WhatsApp Number</h3>
+                <input v-model="whatsappTestNumber" type="tel" placeholder="254790147060" 
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <div class="flex space-x-3">
+                    <button @click="testWhatsApp" class="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">
+                        Test
+                    </button>
+                    <button @click="showWhatsAppTest = false" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700">
+                        Cancel
+                    </button>
+                </div>
+                <div v-if="whatsappTestResult" class="mt-4 p-3 rounded-md" :class="whatsappTestResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+                    {{ whatsappTestResult.message }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Test Modal -->
+        <div v-if="showEmailTest" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+                <h3 class="text-lg font-bold mb-4">Test Email</h3>
+                <input v-model="emailTestAddress" type="email" placeholder="test@example.com" 
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <div class="flex space-x-3">
+                    <button @click="testEmail" class="flex-1 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">
+                        Send Test
+                    </button>
+                    <button @click="showEmailTest = false" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700">
+                        Cancel
+                    </button>
+                </div>
+                <div v-if="emailTestResult" class="mt-4 p-3 rounded-md" :class="emailTestResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+                    {{ emailTestResult.message }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
